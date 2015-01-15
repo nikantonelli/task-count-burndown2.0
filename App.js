@@ -8,7 +8,6 @@ Ext.define('CustomApp', {
     launch: function() {
         //Write app code here
         app = this;
-        console.log("launch");
 
         var testScope = { 
         	record : {
@@ -30,14 +29,9 @@ Ext.define('CustomApp', {
 
     reload : function(scope) {
 
-        console.log("scope",scope);
-
         app.loadTasks(scope,function(tasks){
-            console.log("Tasks",tasks);
             app.loadTaskSnapshots(tasks,function(snapshots) {
-                console.log("snapshots",snapshots.length);
                 app.createChartData(snapshots,scope,function(hc){
-                    console.log("hc",hc);
                     app.showChart(hc);
                 })
             });
@@ -45,7 +39,6 @@ Ext.define('CustomApp', {
     },
 
     onScopeChange : function(scope) {
-    	console.log("scopeChange",scope);
         app.reload(scope);
     },
 
@@ -80,7 +73,6 @@ Ext.define('CustomApp', {
     loadTaskSnapshots : function( tasks,callback ) {
 
         var ids = _.pluck(tasks, function(i) { return i.get("ObjectID");} );
-        console.log("ids",ids);
 
         var storeConfig = {
             find : {
@@ -96,9 +88,6 @@ Ext.define('CustomApp', {
         storeConfig.listeners = {
             scope : this,
             load: function(store, snapshots, success) {
-                console.log("Loaded:"+snapshots.length," Snapshots",snapshots);
-                console.log(_.uniq(_.map(snapshots,function(s){return s.get("FormattedID");})));
-                console.log(_.uniq(_.map(snapshots,function(s){return s.get("State");})));
                 callback(snapshots);
             }
         };
@@ -116,7 +105,6 @@ Ext.define('CustomApp', {
 			);
             filter = (i===0) ? f : filter.or(f);
         });
-        console.log("Timebox Filter:",(filter!==null?filter.toString():"not set"));
         return filter;
     },
 
@@ -129,7 +117,6 @@ Ext.define('CustomApp', {
 
         var snapShotData = _.map(snapshots,function(d){return d.data;});
         var extent = app.getScopeExtent(scope);
-        console.log("extent",extent);
 
         var holidays = [
             //{year: 2014, month: 1, day: 1}  // Made up holiday to test knockout
@@ -164,7 +151,6 @@ Ext.define('CustomApp', {
         });
         var hc = lumenize.arrayOfMaps_To_HighChartsSeries(calculator.getResults().seriesData, hcConfig);
         // callback(hc);
-        console.log("hc",hc);
         app.showChart( app.trimHighChartsConfig(hc));
     },
 
@@ -187,10 +173,6 @@ Ext.define('CustomApp', {
     showChart : function(series) {
 
         var that = this;
-
-        // console.log("series",series);
-        // console.log("Last Accepted Projection  ",_.last(series[5].data));
-        // console.log("Last Historical Projection",_.last(series[6].data));
         
         var chart = this.down("#chart1");
         if (chart !== null)

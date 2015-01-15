@@ -18,7 +18,6 @@ Ext.define('CustomApp', {
     launch: function() {
         //Write app code here
         app = this;
-        console.log("launch");
 
         var testScope = { 
         	record : {
@@ -40,14 +39,9 @@ Ext.define('CustomApp', {
 
     reload : function(scope) {
 
-        console.log("scope",scope);
-
         app.loadTasks(scope,function(tasks){
-            console.log("Tasks",tasks);
             app.loadTaskSnapshots(tasks,function(snapshots) {
-                console.log("snapshots",snapshots.length);
                 app.createChartData(snapshots,scope,function(hc){
-                    console.log("hc",hc);
                     app.showChart(hc);
                 })
             });
@@ -55,7 +49,6 @@ Ext.define('CustomApp', {
     },
 
     onScopeChange : function(scope) {
-    	console.log("scopeChange",scope);
         app.reload(scope);
     },
 
@@ -90,7 +83,6 @@ Ext.define('CustomApp', {
     loadTaskSnapshots : function( tasks,callback ) {
 
         var ids = _.pluck(tasks, function(i) { return i.get("ObjectID");} );
-        console.log("ids",ids);
 
         var storeConfig = {
             find : {
@@ -106,9 +98,6 @@ Ext.define('CustomApp', {
         storeConfig.listeners = {
             scope : this,
             load: function(store, snapshots, success) {
-                console.log("Loaded:"+snapshots.length," Snapshots",snapshots);
-                console.log(_.uniq(_.map(snapshots,function(s){return s.get("FormattedID");})));
-                console.log(_.uniq(_.map(snapshots,function(s){return s.get("State");})));
                 callback(snapshots);
             }
         };
@@ -126,7 +115,6 @@ Ext.define('CustomApp', {
 			);
             filter = (i===0) ? f : filter.or(f);
         });
-        console.log("Timebox Filter:",(filter!==null?filter.toString():"not set"));
         return filter;
     },
 
@@ -139,7 +127,6 @@ Ext.define('CustomApp', {
 
         var snapShotData = _.map(snapshots,function(d){return d.data;});
         var extent = app.getScopeExtent(scope);
-        console.log("extent",extent);
 
         var holidays = [
             //{year: 2014, month: 1, day: 1}  // Made up holiday to test knockout
@@ -174,7 +161,6 @@ Ext.define('CustomApp', {
         });
         var hc = lumenize.arrayOfMaps_To_HighChartsSeries(calculator.getResults().seriesData, hcConfig);
         // callback(hc);
-        console.log("hc",hc);
         app.showChart( app.trimHighChartsConfig(hc));
     },
 
@@ -197,10 +183,6 @@ Ext.define('CustomApp', {
     showChart : function(series) {
 
         var that = this;
-
-        // console.log("series",series);
-        // console.log("Last Accepted Projection  ",_.last(series[5].data));
-        // console.log("Last Historical Projection",_.last(series[6].data));
         
         var chart = this.down("#chart1");
         if (chart !== null)
@@ -342,59 +324,6 @@ Ext.define('CustomApp', {
             ];
         },
 
-        // calcProjectionPoint : function(seriesName,projectOn,row, index, summaryMetrics, seriesData, projectFrom) {
-
-        //     var that = this;
-
-        //     // for first point we save the data set on which we are going to do the linear projection on
-        //     // we also optionally filter out values.
-        //     if (index === 0) {
-        //         datesData = _.pluck(seriesData,"label");
-        //         var mid = self.getMidPointIndex(datesData);
-        //         var today = new Date();
-        //         var li = datesData.length-1;
-
-        //         // that.data[seriesName] = _.pluck(seriesData,seriesName);
-        //         that.data[seriesName] = _.pluck(seriesData,projectOn);
-        //         // if (seriesName==="Story Points") console.log(that.data[seriesName].length);
-        //         // filter to just values before today
-        //         that.data[seriesName] = _.filter(
-        //             that.data[seriesName], function(d,i) {
-        //                 if (!_.isUndefined(projectFrom) && projectFrom==="mid") {
-        //                     return (i < mid);
-        //                 } else {
-        //                     return new Date(Date.parse(datesData[i])) < today;
-        //                 }
-        //             }
-        //         );
-        //         // if (seriesName==="Story Points") console.log(that.data[seriesName].length);
-        //         // optionally remove zero values
-        //         var dx = that.data[seriesName].length;
-        //         if (self.ignoreZeroValues===true) {
-        //             that.data[seriesName] = _.filter(
-        //                 that.data[seriesName], function(d,i) {
-        //                     return d !== 0;
-        //                 }
-        //             );
-        //         }
-        //         // if (seriesName==="Story Points") console.log(that.data[seriesName].length);
-        //         // if we do remove values from the data set then we need to save an offset
-        //         // so we are calculating the projection on the revised length
-        //         var dy = that.data[seriesName].length;
-        //         that.indexOffset[seriesName] = dx - dy;
-
-        //         // calculate an offset between the projected value and the actual accepted values.
-        //         var lastAccepted = that.data[seriesName][that.data[seriesName].length-1];
-        //         var lastProjected = linearProject( that.data[seriesName], that.data[seriesName].length-1);
-        //         // if (seriesName==="Story Points")
-        //         //     console.log("la",lastAccepted,"lp",lastProjected);
-        //         that.pointsOffset[seriesName] = lastAccepted-lastProjected;
-        //     }
-        //     index = index - that.indexOffset[seriesName];
-        //     var y = linearProject( that.data[seriesName], index) + that.pointsOffset[seriesName];
-        //     return Math.round(y * 100) / 100;
-        // },
-
         getDerivedFieldsAfterSummary : function () {
 
             return [
@@ -410,25 +339,6 @@ Ext.define('CustomApp', {
                     }
                 }
             ];
-
-            // get the set of projection metrics
-            // var projectionMetrics = _.filter(self.series,function(s) {
-            //     return s.name.indexOf("Projection")!==-1;
-            // });
-
-            // var metrics = _.map( projectionMetrics, function(m) {
-            //     return {
-            //         as : m.description,
-            //         projectOn : m.projectOn,
-            //         projectFrom : m.projectFrom,
-            //         name : m.name,
-            //         f : function(row,index,summaryMetrics,seriesData) {
-            //             var p = self.calcProjectionPoint(this.name,this.projectOn,row,index,summaryMetrics,seriesData,this.projectFrom);
-            //             return p;
-            //         }
-            //     };
-            // });
-            // return metrics;
 
         },
 
