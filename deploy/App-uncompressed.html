@@ -19,6 +19,9 @@ Ext.define('CustomApp', {
         //Write app code here
         app = this;
 
+        app.timeZone = app.getContext().getWorkspace().WorkspaceConfiguration.TimeZone;
+        console.log("tz",app.timeZone);
+
         var testScope = { 
         	record : {
 				data : {
@@ -141,13 +144,14 @@ Ext.define('CustomApp', {
             summaryMetricsConfig: [],
             deriveFieldsAfterSummary: myCalc.getDerivedFieldsAfterSummary(),
             granularity: lumenize.Time.DAY,
-            tz: 'America/New_York',
+            tz : app.timeZone,
             holidays: holidays,
             workDays: 'Monday,Tuesday,Wednesday,Thursday,Friday'
         };
         // release start and end dates
         var startOnISOString = new lumenize.Time(extent.start).getISOStringInTZ(config.tz);
         var upToDateISOString = new lumenize.Time(extent.end).getISOStringInTZ(config.tz);
+        
         // create the calculator and add snapshots to it.
         calculator = new lumenize.TimeSeriesCalculator(config);
         calculator.addSnapshots(snapShotData, startOnISOString, upToDateISOString);
@@ -160,8 +164,22 @@ Ext.define('CustomApp', {
             });
         });
         var hc = lumenize.arrayOfMaps_To_HighChartsSeries(calculator.getResults().seriesData, hcConfig);
+        console.log("hc",hc);
+
+        var mappedHc = _.map( hc, function(s) {
+            var d = {};
+            _.each( _.without(_.keys(s),["data"]), function(w) {
+                d[w] = s[w];
+            });
+            d.data = _.filter(s.data,function(d,i) { return (new Date(hc[0].data[i]) < scope.record.data.EndDate);  })
+            return d;
+        });
+
+        console.log("mappedHC",mappedHc);
+
+
         // callback(hc);
-        app.showChart( app.trimHighChartsConfig(hc));
+        app.showChart( app.trimHighChartsConfig(mappedHc));
     },
 
     trimHighChartsConfig : function( hc ) {
@@ -230,8 +248,6 @@ Ext.define('CustomApp', {
 	            	}
                 },
                 xAxis: {
-                    // plotLines : plotlines,
-                    //tickInterval : 7,
                     tickInterval : tickInterval,
                     type: 'datetime',
                     labels: {
@@ -251,6 +267,9 @@ Ext.define('CustomApp', {
                     }]
                 },
                 tooltip: {
+                    pointFormat: '{series.name}:<b>{point.y}</b><br/>',
+                    shared: true,
+                    valueDecimals : 0
                 },
                 legend: { align: 'center', verticalAlign: 'bottom' }
             }
