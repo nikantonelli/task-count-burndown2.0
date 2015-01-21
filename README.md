@@ -7,7 +7,7 @@ Barry Mullan (2015)
 
 This app is an alternative to the standard iteration or release burndown which measures task hours. This app provides a burndown based on task count, which is useful for teams who choose not to estimate their tasks. 
 
-To use it, install the app (from the deply folder) as a custom html app on a release or iteration filtered dashboard page. 
+To use it, install the app (from the deploy folder) as a custom html app on a release or iteration filtered dashboard page. 
 
 ![alt text](https://raw.github.com/wrackzone/task-count-burndown/master/doc/screenshot1.png)
 
