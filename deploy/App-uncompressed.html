@@ -166,7 +166,7 @@ Ext.define('CustomApp', {
 	createChartData : function ( snapshots, scope, callback ) {
 		
 		var that = this;
-		var lumenize = window.parent.Rally.data.lookback.Lumenize;
+		var lumenize = window.parent.Rally.data.lookback.Lumenize || window.Rally.data.lookback.Lumenize;
 		// var lumenize = Ext.create("Rally.data.lookback.Lumenize",{});
 
 		var snapShotData = _.map(snapshots,function(d){return d.data;});
