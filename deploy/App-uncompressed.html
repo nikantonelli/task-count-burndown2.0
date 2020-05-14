@@ -3,415 +3,482 @@
 <head>
     <title>task-count-burndown</title>
 
-    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
-    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.0/lib/analytics/analytics-all.js"></script>
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
-                var app = null;
+                Ext.define('TaskCountBurnDownChart',{
+    extend: 'Rally.app.TimeboxScopedApp',
+    compooinentCls: 'app',
+    layout: 'fit',
+    autoScroll: false,
+    requires: [
+        'TaskCountCalculator'
+    ],
 
-Ext.define('CustomApp', {
-	extend: 'Rally.app.TimeboxScopedApp',
-	componentCls: 'app',
-	scopeType : 'iteration',
-	// items:{ html:'<a href="https://help.rallydev.com/apps/2.0rc3/doc/">App SDK 2.0rc3 Docs</a>'},
-	launch: function() {
-		//Write app code here
-		app = this;
+    config: {
+        defaultSettings: {
+            defaultScopeType: 'Iteration'
+        }
+    },
+    launch: function() {
 
-		app.timeZone = app.getContext().getWorkspace().WorkspaceConfiguration.TimeZone;
+        //Get: Model, Current Iteration, Current Release, tasks
+        Deft.Chain.parallel( [
+            this._getTaskModel,
+            this._getCurrentIteration,
+            this._getCurrentRelease
+        ]).then({
+            success: function(answers) {
+                this.model = answers[0];
+                this._loadTasks().then({
+                    success: function(tasks) {
+                        this._processTasks(tasks);
+                        this._addChart();
+                    },
+                    failure: function(e) {
+                        debugger;
+                        console.log(e);
+                    },
+                    scope: this
+                });
+            },
+            failure: function(e) {
+                debugger;
+                console.log(e);
 
-		var params = document.location.search;
-		var paramsObj = Ext.Object.fromQueryString(params)
-		console.log("paramsObj",paramsObj);
+            },
+            scope: this
+        });
+    },
 
-		var testScope = { 
-			record : {
-				data : {
-					Name : "Iteration 3",
-					StartDate : new Date(2015,0,1),
-					EndDate : new Date(2015,0,31)
-				}
-			}
-		};
+    getSettingsFields: function() {
+        return [
+            {
+                name: 'fieldcontainer',
+                width: 800,
+                fieldLabel: 'Timebox Type',
+                defaultType: 'radiofield',
+                defaults: {
+                    flex: 1
+                },
+                layout: 'hbox',
+                items: [
+                    {
+                        boxLabel: 'Iteration',
+                        name: 'timeboxtype',
+                        inputValue: 'Iteration',
+                        id: 'radioIt'
+                    },{
+                        boxLabel: 'Release',
+                        name: 'timeboxtype',
+                        inputValue: 'Release',
+                        id: 'radioRl'
+                    }
+                ]
+            }
+        ]
+    }, 
 
-		// if apikey is passed then use the current iteration
-		if (_.indexOf(_.keys(paramsObj),"apiKey") !== -1 ) {
-			console.log("using apikey");
-			app.loadCurrentIteration( function(data) {
-				if (data.length>0) {
-					var iteration = _.first(data);
-					app.reload( { record : { data : iteration.data } } );
-				} else {
-					app.add({html:"No current Iteration"});
-				}
-			});
+    _getTaskModel: function() {
+        return Rally.data.wsapi.ModelFactory.getModel({
+            type: 'task'
+        });
+    },
 
-		} else {
-			var scope = app.getContext().getTimeboxScope()!== undefined  ? app.getContext().getTimeboxScope() : testScope;
+    _getCurrentIteration: function() {
+        var deferred = Ext.create('Deft.Deferred');
 
-			app.reload(scope);
-		}
+        Ext.create('Rally.data.wsapi.Store',{
+            model: 'Iteration',
+            autoLoad: true,
+            filters: [
+                {
+                    property: 'StartDate',
+                    operator: '<=',
+                    value: Ext.Date.format( new Date(), "Y-m-d\\T00:00:00")
+                },
+                {
+                    property: 'EndDate',
+                    operator: '>',
+                    value: Ext.Date.format( new Date(), "Y-m-d\\T23:59:59")
+                }
+            ],
+            listeners: {
+                load: function(store, records, success) {
+                    if (success) {
+                        if (records.length) {
+                            this.currentIteration = store.getAt(0);
+                        }
+                        deferred.resolve(this.currentIteration);
+                    }else {
+                        deferred.reject('No iteration');
+                    }
+                }
+            },
+            scope: this
+        });
+        return deferred.promise;
+    },
 
-	},
+    _getCurrentRelease: function() {
+        var deferred = Ext.create('Deft.Deferred');
 
-	reload : function(scope) {
+        Ext.create('Rally.data.wsapi.Store',{
+            model: 'Release',
+            autoLoad: true,
+            filters: [
+                {
+                    property: 'ReleaseStartDate',
+                    operator: '<=',
+                    value: Ext.Date.format( new Date(), "Y-m-d\\T00:00:00")
+                },
+                {
+                    property: 'ReleaseDate',
+                    operator: '>',
+                    value: Ext.Date.format( new Date(), "Y-m-d\\T23:59:59")
+                }
+            ],
+            listeners: {
+                load: function(store, records, success) {
+                    if (success) {
+                        if (records.length) {
+                            this.currentRelease = store.getAt(0);
+                        }
+                        deferred.resolve(this.currentRelease);
+                    }
+                    else {
+                        deferred.reject('No Release');
+                    }
+                }
+            },
+            scope: this
+        });
+        return deferred.promise;
+    },
 
-		app.loadTasks(scope,function(tasks){
-			app.loadTaskSnapshots(tasks,function(snapshots) {
-				app.createChartData(snapshots,scope,function(hc){
-					app.showChart(hc);
-				});
-			});
-		});
-	},
+    _loadTasks: function() {
+        var deferred = Ext.create('Deft.Deferred');
 
-	onScopeChange : function(scope) {
-		app.reload(scope);
-	},
+        Ext.create('Rally.data.wsapi.Store', {
+            model: 'Task',
+            autoLoad: true,
+            filters: this._getTaskFilters(),
+            listeners: {
+                load: function(store,records, success) {
+                    if (success && records.length) {
+                        deferred.resolve(records);
+                    }
+                    else {
+                        deferred.reject('No Tasks');
+                    }
+                }
+            }
 
-	getScopeExtent : function( scope ) {
+        });
+        return deferred.promise;
+    },
 
-		var start = scope.record.data.StartDate;
-		var end   = scope.record.data.EndDate;
-		var isoStart  = Rally.util.DateTime.toIsoString(start, false);
-		var isoEnd    = Rally.util.DateTime.toIsoString(end, false);
+    _getTaskFilters: function() {
+        var filters = [];
+        var scope = this._getScope();
+        var selectedType = this.defaultScopeType;
+        var start = Ext.Date.subtract(new Date(), Ext.Date.DAY, 140);
+        var end = new Date();
 
-		return { start : start, end : end, isoStart : isoStart, isoEnd : isoEnd };
+        if (scope === null) {
+            //Choose default setting
+            var timeboxSetting = this.getSetting('timeboxtype');
+            if (timeboxSetting) {
+                selectedType = timeboxSetting;
+            }
+        }
+        else {
+            selectedType = scope.type
+            if (selectedType === 'Milestone') {
+                Rally.ui.notify.Notifier.showWarning({message: 'Milestone scoping not supported. Defaulting to'});
+                selectedType = this.defaultScopeType
+            }
+            else {
+                start = scope.record.data.StartDate;
+		        end   = scope.record.data.EndDate;
+            }
 
-	},
+        }
 
-	loadTasks : function ( scope, callback ) {
+        //selectedType should be 'Iteration' or 'Release'
+        if ( selectedType === 'Iteration') {
+            filters = [
+                {
+                    property: 'Iteration.StartDate',
+                    operator: '>=',
+                    value: start
+                },
+                {
+                    property: 'Iteration.EndDate',
+                    operator: '<=',
+                    value: end
+                }
+            ]
+        }
+        else {
+            filters = [
+                {
+                    property: 'Release.ReleaseStartDate',
+                    operator: '>=',
+                    value: start
+                },
+                {
+                    property: 'Release.ReleaseDate',
+                    operator: '<=',
+                    value: end
+                }
+            ]
+        }
+        return filters;
+    },
 
-		Ext.create('Rally.data.WsapiDataStore', {
-			autoLoad : true,
-			limit : "Infinity",
-			model : "Task",
-			fetch : ["ObjectID"],
-			filters : {property : app.scopeType + ".Name",operator:"=",value:scope.record.data.Name},
-			listeners : {
-				scope : this,
-				load : function(store, data) {
-					callback(data);
-				}
-			}
-		});
-	},
+    _processTasks: function(tasks) {
+        this.taskList = _.pluck(tasks, function(i) { return i.get("ObjectID");} );
+    },
 
-	loadCurrentIteration : function ( callback ) {
 
-		var today = Rally.util.DateTime.toIsoString( new Date(), false);
+    _addChart: function() {
+        debugger;
+        var context = this.getContext();
+        var modelNames = [this.model.typePath];
+        var whiteListFields = [];
+        var gridBoardConfig = {
+            xtype: 'rallygridboard',
+            toggleState: 'chart',
+            chartConfig: this._getChartConfig(),
+            plugins: [{
+                    ptype:'rallygridboardinlinefiltercontrol',
+                    showInChartMode: true,
+                    inlineFilterButtonConfig: {
+                        stateful: true,
+                        stateId: context.getScopedStateId('filters'),
+                        filterChildren: false,
+                        modelNames: modelNames,
+                        inlineFilterPanelConfig: {
+                            quickFilterPanelConfig: {
+                                defaultFields: ['Owner'],
+                                addQuickFilterConfig: {
+                                   whiteListFields: whiteListFields
+                                }
+                            },
+                            advancedFilterPanelConfig: {
+                               advancedFilterRowsConfig: {
+                                   propertyFieldConfig: {
+                                       whiteListFields: whiteListFields
+                                   }
+                               }
+                           }
+                        }
+                    }
+                }
+            ],
+            context: context,
+            modelNames: modelNames,
+            storeConfig: {
+                filters: this._getFilters()
+            }
+        };
+        this.add(gridBoardConfig);
+    },
 
-		var filter = Ext.create('Rally.data.wsapi.Filter', {
-				property : "StartDate" , operator : '<=', value : today });
-		filter = filter.and( {
-			property : "EndDate" , operator : '>=', value : today 
-		});
+    _getChartConfig: function() {
+        return {
+            xtype: 'rallychart',
+            storeType: 'Rally.data.lookback.SnapshotStore',
+            storeConfig: this._getStoreConfig(),
+            calculatorType: 'TaskCountCalculator',
+            calculatorConfig: this._getCalculatorConfig(),
+            chartConfig: this._getHCConfig()
+        };
+    },
 
-		Ext.create('Rally.data.WsapiDataStore', {
-			autoLoad : true,
-			limit : "Infinity",
-			model : "Iteration",
-			fetch : ["ObjectID","Name","EndDate","StartDate"],
-			filters : [filter],
-			listeners : {
-				scope : this,
-				load : function(store, data) {
-					callback(data);
-				}
-			}
-		});
-
-	},
-
-	loadTaskSnapshots : function( tasks,callback ) {
-
-		var ids = _.pluck(tasks, function(i) { return i.get("ObjectID");} );
-
-		var storeConfig = {
+    _getHCConfig: function() {
+        return  {
+            chart: {
+                type: 'column'
+            },
+            title: {
+            text: 'Task Burndown',
+            x: -20 //center
+            },
+            plotOptions: {
+                series: {
+                    marker: {
+                        radius: 2
+                    }
+                },
+                column: {
+                    stacking: 'normal',
+                    dataLabels: {
+                        enabled: true,
+                        color: 'white',
+                        style: {
+                            textShadow: '0 0 1px black'
+                        }
+                    }
+                }
+            },
+            xAxis: {
+                type: 'datetime',
+                labels: {
+                    formatter: function() {
+                        debugger;
+                        return Ext.Date.format( new Date(this.value), "d/m/Y");
+                    }
+                }
+            },
+            yAxis: {
+                title: {
+                    text : 'Task Count'
+                },
+                plotLines: [{
+                    value: 0,
+                    width: 1,
+                    color: '#808080'
+                }]
+            },
+            tooltip: {
+                pointFormat: '{series.name}:<b>{point.y}</b><br/>',
+                shared: true,
+                valueDecimals : 0
+            },
+            legend: { align: 'center', verticalAlign: 'bottom' }
+        };
+    },
+    _getStoreConfig: function() {
+        return {
 			find : {
-				'ObjectID' :  {"$in" : ids}
+				'ObjectID' :  {"$in" : this.taskList || [] }
 			},
-			autoLoad : true,
-			pageSize:1000,
-			limit: 'Infinity',
+			pageSize:2000,
+			limit: Infinity,
 			fetch: ['FormattedID','ObjectID','State','Iteration','_TypeHierarchy',"_ValidFrom","_ValidTo"],
 			hydrate: ['_TypeHierarchy','Iteration']
 		};
+    },
 
-		storeConfig.listeners = {
-			scope : this,
-			load: function(store, snapshots, success) {
-				callback(snapshots);
-			}
-		};
+    _getFilters: function() {
+        var queries = [],
+            timeboxScope = this.getContext().getTimeboxScope();
+        if (timeboxScope) {
+            queries.push(timeboxScope.getQueryFilter());
+        }
+        if (this.getSetting('query')) {
+            queries.push(Rally.data.QueryFilter.fromQueryString(this.getSetting('query')));
+        }
+        return queries;
+    },
 
-		var snapshotStore = Ext.create('Rally.data.lookback.SnapshotStore', storeConfig);
+    _getScope: function() {
+        return this.getContext().getTimeboxScope()!== undefined  ? this.getContext().getTimeboxScope() : null;
+    },
 
-	},
-
-	createTimeBoxFilter : function ( timeboxes ) {
-		var filter = null;
-
-		_.each( timeboxes, function( tb, i ) {
-			var f = Ext.create('Rally.data.wsapi.Filter', {
-				property : app.scopeType + ".ObjectID", operator : '=', value : ""+tb.get("ObjectID") }
-			);
-			filter = (i===0) ? f : filter.or(f);
-		});
-		return filter;
-	},
-
-
-	createChartData : function ( snapshots, scope, callback ) {
-		
-		var that = this;
-		var lumenize = window.parent.Rally.data.lookback.Lumenize || window.Rally.data.lookback.Lumenize;
-		// var lumenize = Ext.create("Rally.data.lookback.Lumenize",{});
-
-		var snapShotData = _.map(snapshots,function(d){return d.data;});
-		var extent = app.getScopeExtent(scope);
-
-		var holidays = [
+    // calculator config
+	_getCalculatorConfig: function() {
+        var holidays = [
 			//{year: 2014, month: 1, day: 1}  // Made up holiday to test knockout
 		];
-
-		var myCalc = Ext.create("TaskCountCalculator", {});
-
-		// calculator config
-		var config = {
-			deriveFieldsOnInput: myCalc.getDerivedFieldsOnInput(),
-			metrics: myCalc.getMetrics(),
-			summaryMetricsConfig: [],
-			deriveFieldsAfterSummary: myCalc.getDerivedFieldsAfterSummary(),
-			granularity: lumenize.Time.DAY,
-			tz : app.timeZone,
-			holidays: holidays,
-			workDays: 'Monday,Tuesday,Wednesday,Thursday,Friday'
+        return  {
+            granularity: Ext.Date.DAY,
+            holidays: holidays,
+            workDays: 'Monday,Tuesday,Wednesday,Thursday,Friday',
+            // setEndDate: new Date(extent.start).toISOString(),
+            // setStartDate: new Date(extent.end).toISOString()
 		};
-		// release start and end dates
-		var startOnISOString = new lumenize.Time(extent.start).getISOStringInTZ(config.tz);
-		var upToDateISOString = new lumenize.Time(extent.end).getISOStringInTZ(config.tz);
-		
-		// create the calculator and add snapshots to it.
-		calculator = new lumenize.TimeSeriesCalculator(config);
-		calculator.addSnapshots(snapShotData, startOnISOString, upToDateISOString);
-		
-		// create a high charts series config object, used to get the hc series data
-		var hcConfig = [{ name : "label" },{ name : "Ideal", type : "line"}];
-		_.each( myCalc.getMetrics(), function(m) {
-			hcConfig.push({
-				name : m.as, type : m.display, visible : ( m.as === "Completed" ? false : true )
-			});
-		});
-		var hc = lumenize.arrayOfMaps_To_HighChartsSeries(calculator.getResults().seriesData, hcConfig);
-
-		var mappedHc = _.map( hc, function(s) {
-			var d = {};
-			_.each( _.without(_.keys(s),["data"]), function(w) {
-				d[w] = s[w];
-			});
-			d.data = _.filter(s.data,function(d,i) { return (new Date(hc[0].data[i]) < scope.record.data.EndDate); });
-			return d;
-		});
-
-		// callback(hc);
-		app.showChart( app.trimHighChartsConfig(mappedHc));
-	},
-
-	trimHighChartsConfig : function( hc ) {
-		var today = new Date();
-		_.each(hc, function(series,i) {
-		// for non-projection values dont chart after today
-			if (series.name.indexOf("Ideal")===-1 && series.name.indexOf("label") ===-1 && series.name.indexOf("Total") === -1  ) {
-				_.each( series.data, function( point , x ){
-					if ( Date.parse(hc[0].data[x]) > today )
-						series.data[x] = null;
-				});
-			}
-		});
-
-		return hc;
-	},
+    }
+});
+                Ext.define("TaskCountCalculator", {
+    extend: "Rally.data.lookback.calculator.TimeSeriesCalculator",
+    config : {
+    },
 
 
-	showChart : function(series) {
+    constructor:function(config) {
+        self = this;
+        this.initConfig(config);
+        return this;
+    },
 
-		var that = this;
-		
-		var chart = this.down("#chart1");
-		if (chart !== null)
-			chart.removeAll();
-			
-		
-		// set the tick interval
-		var tickInterval = series[1].data.length <= (7*20) ? 7 : (series[1].data.length / 20);
+    prepareChartData: function(snapshots) {
+        debugger;
+    },
 
-		var extChart = Ext.create('Rally.ui.chart.Chart', {
-			columnWidth : 1,
-			itemId : "chart1",
-			chartData: {
-				categories : series[0].data,
-				series : series.slice(1, series.length)
-			},
+    getMetrics: function () {
 
-			// green rgb(141, 198, 63)
-			// blue rgb(0, 94, 184)
-			// todo rgb(192, 192, 192);
-			chartColors : ["LightGray","Black","rgb(0, 94, 184)","rgb(192, 192, 192)","rgb(141, 198, 63)"],
+        return [
+            {
+                "as": "Total",
+                "field": "ObjectID",
+                "display": "line",
+                "f": "count"
+            },
+            {
+                "field": "ObjectID",
+                "as": "In-Progress",
+                "f": "filteredCount",
+                "filterField": "State",
+                "filterValues": ["In-Progress"],
+                "display": "column"
+            },
+            {
+                "field": "ObjectID",
+                "as": "Defined",
+                "f": "filteredCount",
+                "filterField": "State",
+                "filterValues": ["Defined"],
+                "display": "column"
+            },
+            {
+                "field": "ObjectID",
+                "as": "Completed",
+                "f": "filteredCount",
+                "filterField": "State",
+                "filterValues": ["Completed"],
+                "display": "column"
+            }
+        ];
+    },
 
-			chartConfig : {
-				chart: {
-				},
-				title: {
-				text: 'Task Burndown',
-				x: -20 //center
-				},
-				plotOptions: {
-					series: {
-						marker: {
-							radius: 2
-						}
-					},
-					column: {
-						stacking: 'normal',
-						dataLabels: {
-							enabled: true,
-							color: (Highcharts.theme && Highcharts.theme.dataLabelsColor) || 'white',
-							style: {
-								textShadow: '0 0 1px black'
-							}
-						}
-					}
-				},
-				xAxis: {
-					tickInterval : tickInterval,
-					type: 'datetime',
-					labels: {
-						formatter: function() {
-							return Highcharts.dateFormat('%b %d', Date.parse(this.value));
-						}
-					}
-				},
-				yAxis: {
-					title: {
-						text : 'Task Count'
-					},
-					plotLines: [{
-						value: 0,
-						width: 1,
-						color: '#808080'
-					}]
-				},
-				tooltip: {
-					pointFormat: '{series.name}:<b>{point.y}</b><br/>',
-					shared: true,
-					valueDecimals : 0
-				},
-				legend: { align: 'center', verticalAlign: 'bottom' }
-			}
-		});
-		this.add(extChart);
-		chart = this.down("#chart1");
-		var p = Ext.get(chart.id);
-		elems = p.query("div.x-mask");
-		_.each(elems, function(e) { e.remove(); });
-		var elems = p.query("div.x-mask-msg");
-		_.each(elems, function(e) { e.remove(); });
+    getDerivedFieldsOnInput : function () {
+        // XS 1, S 3, M 5, L 8, XL 13
+        return [
+        ];
+    },
 
-	}
+    getDerivedFieldsAfterSummary : function () {
 
+        return [
+            {
+                as: 'Ideal', f: function(row, index, summaryMetrics, seriesData) {
+                    // if (index===0) console.log(seriesData);
+                    var maxTasks = _.max( _.pluck( seriesData, "Total"));
+                    var increments = seriesData.length - 1;
+                    var incrementAmount = maxTasks / increments;
+                    // console.log(maxTasks,increments,incrementAmount);
+
+                    return (100 * (maxTasks - (index * incrementAmount)) / 100);
+                }
+            }
+        ];
+
+    },
+
+    defined : function(v) {
+        return (!_.isUndefined(v) && !_.isNull(v));
+    }
 });
 
 
-                Ext.define("TaskCountCalculator", function() {
-
-    var self;
-
-    return {
-
-        extend: "Rally.data.lookback.calculator.TimeSeriesCalculator",
-
-        config : {
-        },
-
-        constructor:function(config) {
-            self = this;
-            this.initConfig(config);
-            return this;
-        },
-
-        getMetrics: function () {
-
-            return [
-                {
-                    "as": "Total",
-                    "field": "ObjectID",
-                    "display": "line",
-                    "f": "count"
-                },
-                {
-                    "field": "ObjectID",
-                    "as": "In-Progress",
-                    "f": "filteredCount",
-                    "filterField": "State",
-                    "filterValues": ["In-Progress"],
-                    "display": "column"
-                },
-                {
-                    "field": "ObjectID",
-                    "as": "Defined",
-                    "f": "filteredCount",
-                    "filterField": "State",
-                    "filterValues": ["Defined"],
-                    "display": "column"
-                },
-                {
-                    "field": "ObjectID",
-                    "as": "Completed",
-                    "f": "filteredCount",
-                    "filterField": "State",
-                    "filterValues": ["Completed"],
-                    "display": "column"
-                }
-            ];
-        },
-
-        getDerivedFieldsOnInput : function () {
-            // XS 1, S 3, M 5, L 8, XL 13
-            return [
-            ];
-        },
-
-        getDerivedFieldsAfterSummary : function () {
-
-            return [
-                {
-                    as: 'Ideal', f: function(row, index, summaryMetrics, seriesData) {
-                        // if (index===0) console.log(seriesData);
-                        var maxTasks = _.max( _.pluck( seriesData, "Total"));
-                        var increments = seriesData.length - 1;
-                        var incrementAmount = maxTasks / increments;
-                        // console.log(maxTasks,increments,incrementAmount);
-
-                        return (100 * (maxTasks - (index * incrementAmount)) / 100);
-                    }
-                }
-            ];
-
-        },
-
-        defined : function(v) {
-            return (!_.isUndefined(v) && !_.isNull(v));
-        }
-    };
-   
-});
-
-
-            Rally.launchApp('CustomApp', {
+            Rally.launchApp('TaskCountBurnDownChart', {
                 name:"task-count-burndown",
-	            parentRepos:""
+                parentRepos:"",
+                version:"0.1.1"
             });
 
         });
